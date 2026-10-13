@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Расписание — программа для завуча</title>
+<style>
+:root{--bg:#f4f6fb;--card:#fff;--tx:#1b2333;--mut:#6b7488;--bd:#dde2ee;--ac:#2f5bea;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#10141f;--card:#1a2030;--tx:#e8ecf6;--mut:#98a2b8;--bd:#2c3550;--ac:#6f8dff}}
+:root[data-theme="dark"]{--bg:#10141f;--card:#1a2030;--tx:#e8ecf6;--mut:#98a2b8;--bd:#2c3550;--ac:#6f8dff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;min-height:100vh}
+header{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 16px;background:var(--card);border-bottom:1px solid var(--bd);position:sticky;top:0;z-index:5}
+h1{font-size:18px;margin:0 8px 0 0}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}
+button,select,input{font:inherit;color:var(--tx)}
+button{border:1px solid var(--bd);background:var(--card);padding:7px 12px;border-radius:9px;cursor:pointer}
+button:hover{border-color:var(--ac)}
+button.on,button.pri{background:var(--ac);border-color:var(--ac);color:#fff}
+button.dng{color:#d33}
+select,input[type=text],input[type=number]{border:1px solid var(--bd);background:var(--card);padding:7px 9px;border-radius:9px;max-width:100%}
+main{padding:14px 16px;max-width:1300px;margin:0 auto}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:12px}
+.sp{flex:1}
+.wrap{overflow-x:auto;border-radius:12px}
+table.g{border-collapse:separate;border-spacing:4px;width:100%;min-width:720px}
+table.g th{font-weight:600;font-size:13px;color:var(--mut);padding:6px}
+table.g th.t small{display:block;font-weight:400}
+td.c{height:78px;min-width:120px;border-radius:10px;background:var(--card);border:1px dashed var(--bd);vertical-align:top;padding:6px 8px;font-size:13px;cursor:pointer}
+td.c.f{border-style:solid;border-color:transparent;color:#fff}
+td.c b{display:block;font-size:14px}
+td.c.bad{outline:3px solid #ffd400;outline-offset:-3px}
+td.ro{cursor:default}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:14px}
+.card h3{margin:0 0 10px;font-size:16px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.row{display:flex;gap:8px;align-items:center;margin:5px 0}
+.row input[type=text]{flex:1;min-width:0}
+input[type=color]{width:38px;height:34px;padding:2px;border:1px solid var(--bd);border-radius:8px;background:var(--card)}
+.mut{color:var(--mut);font-size:13px}
+#modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:16px;z-index:20}
+#modal .box{background:var(--card);border-radius:16px;padding:18px;width:380px;max-width:100%}
+#modal label{display:block;margin:10px 0 3px;font-size:13px;color:var(--mut)}
+#modal select{width:100%}
+.warn{background:#fff3c4;color:#6a4b00;border-radius:8px;padding:7px 9px;margin-top:10px;font-size:13px}
+#print{display:none}
+@media print{
+ @page{size:A4 landscape;margin:10mm}
+ body>*:not(#print){display:none!important}
+ #print{display:block}
+ body{background:#fff;color:#000}
+ *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+}
+.pg{page-break-after:always;color:#111;background:#fff}
+.pg:last-child{page-break-after:auto}
+.pg h2{margin:0;font-size:22px}
+.pg .sub{color:#555;margin:2px 0 8px;font-size:13px}
+.pg table.g{min-width:0;border-spacing:3px}
+.pg table.g th{color:#333}
+.pg td.c{height:68px;background:#fff;border:1px solid #ccc;cursor:default}
+.pg td.c.f{border-color:transparent}
+.leg{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;font-size:12px}
+.leg i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+</style>
+</head>
+<body>
+<header>
+ <h1>📅 Расписание</h1>
+ <div class="tabs">
+  <button id="t-s" class="on" onclick="tab('s')">Расписание</button>
+  <button id="t-d" onclick="tab('d')">Справочники</button>
+  <button id="t-p" onclick="tab('p')">PDF / печать</button>
+ </div>
+</header>
+<main id="app"></main>
+<div id="modal"><div class="box" id="mbox"></div></div>
+<div id="print"></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const DAYS=['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
+const uid=()=>Math.random().toString(36).slice(2,9);
+const KEY='zauch-schedule-v1';
+function def(){
+ const sub=[['Информатика','#e53935'],['Математика','#1e63d6'],['Русский язык','#2e9e5b'],['Английский язык','#8e44ad'],['Физика','#e67e22'],['Физкультура','#00897b']].map(([name,color])=>({id:uid(),name,color}));
+ return {school:'Школа',year:'2026/2027',days:5,slots:7,times:'8:30,9:25,10:20,11:15,12:10,13:05,14:00,14:55',
+  subjects:sub,teachers:[{id:uid(),name:'Иванов И.И.'}],rooms:[{id:uid(),name:'101'},{id:uid(),name:'Каб. информатики'}],
+  classes:['5А','5Б','6А'].map(name=>({id:uid(),name})),lessons:{}};
+}
+let S;
+try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
+if(!S||!S.subjects)S=def();
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+const by=(arr,id)=>arr.find(x=>x.id===id);
+let cur='s',mode='class',ent='';
+const times=()=>S.times.split(',').map(x=>x.trim());
+
+function tab(t){cur=t;['s','d','p'].forEach(k=>$('#t-'+k).classList.toggle('on',k===t));render()}
+function render(){({s:rSched,d:rDict,p:rPrint})[cur]()}
+
+/* ---------- grid ---------- */
+function cellData(m,id,d,s){
+ if(m==='class'){const l=S.lessons[id+'|'+d+'|'+s];return l?one(l,[ 'teacher','room']):null}
+ for(const k in S.lessons){
+  const [c,dd,ss]=k.split('|');const l=S.lessons[k];
+  if(+dd===d&&+ss===s&&((m==='teacher'&&l.teacher===id)||(m==='room'&&l.room===id))){
+   const cl=by(S.classes,c);return one(l,m==='teacher'?['class','room']:['class','teacher'],cl)}
+ }
+ return null;
+}
+function one(l,parts,cl){
+ const sb=by(S.subjects,l.subj);if(!sb)return null;
+ const out=[];
+ for(const p of parts){
+  if(p==='teacher'){const t=by(S.teachers,l.teacher);if(t)out.push(t.name)}
+  if(p==='room'){const r=by(S.rooms,l.room);if(r)out.push('каб. '+r.name.replace(/^каб\.?\s*/i,''))}
+  if(p==='class'&&cl)out.push(cl.name+' класс');
+ }
+ return {sb,out};
+}
+function conflict(cid,d,s,l){
+ const r=[];if(!l)return r;
+ for(const k in S.lessons){
+  const [c,dd,ss]=k.split('|');if(c===cid||+dd!==d||+ss!==s)continue;
+  const o=S.lessons[k],cl=by(S.classes,c);if(!cl)continue;
+  if(l.teacher&&o.teacher===l.teacher)r.push('Учитель уже ведёт урок в '+cl.name);
+  if(l.room&&o.room===l.room)r.push('Кабинет занят классом '+cl.name);
+ }
+ return r;
+}
+function gridHTML(m,id,edit){
+ const tm=times();
+ let h='<table class="g"><tr><th></th>'+DAYS.slice(0,S.days).map(x=>`<th>${x}</th>`).join('')+'</tr>';
+ for(let s=0;s<S.slots;s++){
+  h+=`<tr><th class="t">${s+1} урок<small>${esc(tm[s]||'')}</small></th>`;
+  for(let d=0;d<S.days;d++){
+   const c=cellData(m,id,d,s);
+   const bad=edit&&c&&conflict(id,d,s,S.lessons[id+'|'+d+'|'+s]).length;
+   const cls='c'+(c?' f':'')+(bad?' bad':'')+(edit?'':' ro');
+   const st=c?` style="background:${c.sb.color}"`:'';
+   const oc=edit?` onclick="openCell('${id}',${d},${s})"`:'';
+   h+=`<td class="${cls}"${st}${oc}>${c?`<b>${esc(c.sb.name)}</b>${c.out.map(esc).join('<br>')}${bad?'<br>⚠ конфликт':''}`:''}</td>`;
+  }
+  h+='</tr>';
+ }
+ return h+'</table>';
+}
+function legend(){return '<div class="leg">'+S.subjects.map(s=>`<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('')+'</div>'}
+
+/* ---------- schedule tab ---------- */
+const lists=()=>mode==='class'?S.classes:mode==='teacher'?S.teachers:S.rooms;
+function rSched(){
+ const L=lists();if(!by(L,ent))ent=L[0]?.id||'';
+ $('#app').innerHTML=`<div class="bar">
+  <select onchange="mode=this.value;ent='';render()">
+   <option value="class"${mode==='class'?' selected':''}>По классам (редактор)</option>
+   <option value="teacher"${mode==='teacher'?' selected':''}>По учителям</option>
+   <option value="room"${mode==='room'?' selected':''}>По кабинетам</option></select>
+  <select onchange="ent=this.value;render()">${L.map(x=>`<option value="${x.id}"${x.id===ent?' selected':''}>${esc(x.name)}</option>`).join('')}</select>
+  <span class="sp"></span>
+  ${mode==='class'&&ent?'<button class="dng" onclick="clearClass()">Очистить класс</button>':''}
+ </div>
+ ${ent?`<div class="wrap">${gridHTML(mode,ent,mode==='class')}</div>${legend()}
+ <p class="mut">${mode==='class'?'Нажмите на ячейку, чтобы выбрать предмет, учителя и кабинет. Жёлтая рамка — конфликт (учитель или кабинет заняты).':'Это просмотр: расписание собирается автоматически из классов.'} Всё сохраняется автоматически.</p>`
+ :'<div class="card">Сначала добавьте данные во вкладке «Справочники».</div>'}`;
+}
+function clearClass(){if(!confirm('Очистить расписание этого класса?'))return;
+ for(const k of Object.keys(S.lessons))if(k.startsWith(ent+'|'))delete S.lessons[k];save();render()}
+function opts(arr,sel,empty){return `<option value="">${empty}</option>`+arr.map(x=>`<option value="${x.id}"${x.id===sel?' selected':''}>${esc(x.name)}</option>`).join('')}
+function openCell(cid,d,s){
+ const k=cid+'|'+d+'|'+s,l=S.lessons[k]||{};
+ window._k=[cid,d,s];
+ $('#mbox').innerHTML=`<h3 style="margin:0">${esc(by(S.classes,cid).name)} · ${DAYS[d]} · ${s+1} урок</h3>
+ <label>Предмет</label><select id="m-s" onchange="chk()">${opts(S.subjects,l.subj,'— выберите —')}</select>
+ <label>Учитель</label><select id="m-t" onchange="chk()">${opts(S.teachers,l.teacher,'— не указан —')}</select>
+ <label>Кабинет</label><select id="m-r" onchange="chk()">${opts(S.rooms,l.room,'— не указан —')}</select>
+ <div id="m-w"></div>
+ <div class="row" style="margin-top:14px"><button class="pri" onclick="saveCell()">Сохранить</button><button onclick="closeM()">Отмена</button><span class="sp"></span><button class="dng" onclick="delCell()">Удалить</button></div>`;
+ $('#modal').style.display='flex';chk();
+}
+function cur3(){return {subj:$('#m-s').value,teacher:$('#m-t').value,room:$('#m-r').value}}
+function chk(){const [c,d,s]=window._k;const r=conflict(c,d,s,cur3());
+ $('#m-w').innerHTML=r.length?`<div class="warn">⚠ ${r.join('<br>⚠ ')}</div>`:''}
+function saveCell(){const [c,d,s]=window._k,v=cur3();if(!v.subj){alert('Выберите предмет');return}
+ S.lessons[c+'|'+d+'|'+s]=v;save();closeM();render()}
+function delCell(){const [c,d,s]=window._k;delete S.lessons[c+'|'+d+'|'+s];save();closeM();render()}
+function closeM(){$('#modal').style.display='none'}
+$('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeM()});
+
+/* ---------- dictionaries ---------- */
+function rDict(){
+ const list=(key,title,color)=>`<div class="card"><h3>${title}</h3>
+  ${S[key].map(x=>`<div class="row">${color?`<input type="color" value="${x.color}" onchange="upd('${key}','${x.id}','color',this.value)">`:''}
+   <input type="text" value="${esc(x.name)}" onchange="upd('${key}','${x.id}','name',this.value)">
+   <button class="dng" onclick="rm('${key}','${x.id}')">✕</button></div>`).join('')}
+  <div class="row"><input type="text" id="n-${key}" placeholder="Добавить…" onkeydown="if(event.key==='Enter')add('${key}')"><button class="pri" onclick="add('${key}')">+</button></div></div>`;
+ $('#app').innerHTML=`<div class="card"><h3>Настройки</h3>
+  <div class="grid2">
+   <div><div class="mut">Название школы</div><input type="text" style="width:100%" value="${esc(S.school)}" onchange="S.school=this.value;save()"></div>
+   <div><div class="mut">Учебный год</div><input type="text" style="width:100%" value="${esc(S.year)}" onchange="S.year=this.value;save()"></div>
+   <div><div class="mut">Дней в неделю</div><select onchange="S.days=+this.value;save()"><option ${S.days==5?'selected':''}>5</option><option ${S.days==6?'selected':''}>6</option></select></div>
+   <div><div class="mut">Уроков в день</div><input type="number" min="1" max="10" value="${S.slots}" onchange="S.slots=Math.max(1,Math.min(10,+this.value||7));save()"></div>
+  </div>
+  <div class="mut" style="margin-top:10px">Время начала уроков (через запятую)</div>
+  <input type="text" style="width:100%" value="${esc(S.times)}" onchange="S.times=this.value;save()">
+  <div class="row" style="margin-top:12px"><button class="dng" onclick="resetAll()">Сбросить всё</button></div></div>
+ <div class="grid2">${list('subjects','Предметы и цвета',1)}${list('teachers','Учителя')}${list('rooms','Кабинеты')}${list('classes','Классы')}</div>`;
+}
+function add(k){const i=$('#n-'+k),v=i.value.trim();if(!v)return;
+ const o={id:uid(),name:v};if(k==='subjects')o.color='#'+Math.floor(Math.random()*0x888888+0x222222).toString(16).padStart(6,'0');
+ S[k].push(o);save();rDict();$('#n-'+k).focus()}
+function upd(k,id,f,v){by(S[k],id)[f]=v;save()}
+function rm(k,id){if(!confirm('Удалить? Связанные уроки тоже удалятся.'))return;
+ S[k]=S[k].filter(x=>x.id!==id);
+ const f={subjects:'subj',teachers:'teacher',rooms:'room'}[k];
+ for(const key of Object.keys(S.lessons)){const l=S.lessons[key];
+  if(k==='classes'&&key.startsWith(id+'|'))delete S.lessons[key];
+  else if(f&&l[f]===id){if(f==='subj')delete S.lessons[key];else l[f]=''}}
+ save();rDict()}
+function resetAll(){if(confirm('Удалить все данные и начать заново?')){S=def();save();rDict()}}
+
+/* ---------- print / PDF ---------- */
+function rPrint(){
+ $('#app').innerHTML=`<div class="card"><h3>Скачать PDF</h3>
+  <p class="mut">Нажмите кнопку — откроется окно печати. Выберите «Сохранить как PDF» (альбомная ориентация). Каждый класс, учитель или кабинет — на отдельной странице.</p>
+  <div class="row" style="flex-wrap:wrap">
+   <button class="pri" onclick="pr('class')">Все классы</button>
+   <button class="pri" onclick="pr('teacher')">Все учителя</button>
+   <button class="pri" onclick="pr('room')">Все кабинеты</button>
+   <button class="pri" onclick="pr('all')">Вся школа</button></div></div>
+ <div class="card"><h3>Один человек / класс</h3><div class="row" style="flex-wrap:wrap">
+  <select id="p-m" onchange="fillP()"><option value="class">Класс</option><option value="teacher">Учитель</option><option value="room">Кабинет</option></select>
+  <select id="p-e"></select><button class="pri" onclick="pr('one')">Скачать PDF</button></div>
+  <p class="mut">Удобно раздать каждому учителю его личное расписание.</p></div>`;
+ fillP();
+}
+function fillP(){const m=$('#p-m').value;$('#p-e').innerHTML=(m==='class'?S.classes:m==='teacher'?S.teachers:S.rooms).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}
+function page(m,x){
+ const t={class:'Класс ',teacher:'Учитель: ',room:'Кабинет '}[m]+x.name;
+ return `<section class="pg"><h2>${esc(t)}</h2><div class="sub">${esc(S.school)} · Расписание уроков · ${esc(S.year)}</div>${gridHTML(m,x.id,false)}${legend()}</section>`;
+}
+function pr(k){
+ const L=m=>(m==='class'?S.classes:m==='teacher'?S.teachers:S.rooms);
+ let h='';
+ if(k==='one'){const m=$('#p-m').value,x=by(L(m),$('#p-e').value);if(x)h=page(m,x)}
+ else for(const m of(k==='all'?['class','teacher','room']:[k]))h+=L(m).map(x=>page(m,x)).join('');
+ if(!h){alert('Нет данных для печати');return}
+ $('#print').innerHTML=h;window.print();
+}
+render();
+</script>
+</body>
+</html>

@@ -32,6 +32,7 @@ td.c.f{border-style:solid;border-color:transparent;color:#fff}
 td.c b{display:block;font-size:14px}
 td.c.bad{outline:3px solid #ffd400;outline-offset:-3px}
 td.ro{cursor:default}
+table.dy td.c{min-width:110px;height:70px}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:14px}
 .card h3{margin:0 0 10px;font-size:16px}
 .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
@@ -67,6 +68,9 @@ table.ld th{color:var(--mut);font-size:13px}
 .pg table.g th{color:#333}
 .pg td.c{height:68px;background:#fff;border:1px solid #ccc;cursor:default}
 .pg td.c.f{border-color:transparent}
+.pg table.dy td.c{min-width:0;height:54px;font-size:10px;padding:3px 4px}
+.pg table.dy td.c b{font-size:11px}
+.pg table.dy th{font-size:11px;padding:3px}
 .leg{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;font-size:12px}
 .leg i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px}
 </style>
@@ -76,6 +80,7 @@ table.ld th{color:var(--mut);font-size:13px}
  <h1>📅 Расписание</h1>
  <div class="tabs">
   <button id="t-s" class="on" onclick="tab('s')">Расписание</button>
+  <button id="t-y" onclick="tab('y')">По дням</button>
   <button id="t-l" onclick="tab('l')">Нагрузка учителей</button>
   <button id="t-d" onclick="tab('d')">Справочники</button>
   <button id="t-p" onclick="tab('p')">PDF / печать</button>
@@ -106,11 +111,11 @@ if(!S||!S.subjects)S=def();
 S.teachers.forEach(t=>{if(!t.days)t.days=[0,1,2,3,4,5];if(!t.classes)t.classes=[];if(t.norm==null)t.norm=0});
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 const by=(arr,id)=>arr.find(x=>x.id===id);
-let cur='s',mode='class',ent='',Q='';const hit=n=>!Q||String(n??'').toLowerCase().includes(Q);
+let cur='s',mode='class',ent='',Q='',DI=0;const hit=n=>!Q||String(n??'').toLowerCase().includes(Q);
 const times=()=>S.times.split(',').map(x=>x.trim());
 
-function tab(t){cur=t;['s','l','d','p'].forEach(k=>$('#t-'+k).classList.toggle('on',k===t));render()}
-function render(){({s:rSched,l:rLoad,d:rDict,p:rPrint})[cur]()}
+function tab(t){cur=t;['s','y','l','d','p'].forEach(k=>$('#t-'+k).classList.toggle('on',k===t));render()}
+function render(){({s:rSched,y:rDay,l:rLoad,d:rDict,p:rPrint})[cur]()}
 
 /* ---------- load ---------- */
 function load(tid){
@@ -189,6 +194,41 @@ function gridHTML(m,id,edit){
  return h+'</table>';
 }
 function legend(){return '<div class="leg">'+S.subjects.map(s=>`<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('')+'</div>'}
+
+/* ---------- day view: all classes for one day ---------- */
+function dayTable(d){
+ const tm=times(),cs=S.classes;
+ if(!cs.length)return '<div class="mut">Нет классов</div>';
+ let h='<table class="g dy"><tr><th></th>'+cs.map(c=>`<th>${esc(c.name)}</th>`).join('')+'</tr>';
+ for(let s=0;s<S.slots;s++){
+  h+=`<tr><th class="t">${s+1} урок<small>${esc(tm[s]||'')}</small></th>`;
+  for(const c of cs){
+   const r=cellData('class',c.id,d,s);
+   h+=`<td class="c${r?' f ro':' ro'}"${r?` style="background:${r.sb.color}"`:''}>${r?`<b>${esc(r.sb.name)}</b>${r.out.map(esc).join('<br>')}`:''}</td>`;
+  }
+  h+='</tr>';
+ }
+ return h+'</table>';
+}
+function rDay(){
+ if(DI>=S.days)DI=0;
+ $('#app').innerHTML=`<div class="bar">
+  <select onchange="DI=+this.value;rDay()">${DAYS.slice(0,S.days).map((n,i)=>`<option value="${i}"${i===DI?' selected':''}>${n}</option>`).join('')}</select>
+  <span class="sp"></span>
+  <button class="pri" onclick="prDay(DI)">⬇ PDF этого дня</button>
+  <button class="pri" onclick="prDay(-1)">⬇ PDF всех дней</button></div>
+  <div class="wrap">${dayTable(DI)}</div>${legend()}
+  <p class="mut">Столбцы — классы, строки — уроки. Для изменения расписания откройте вкладку «Расписание».</p>`;
+}
+function dayPage(d){
+ return `<section class="pg"><h2>${DAYS[d]}</h2><div class="sub">${esc(S.school)} · Расписание всех классов · ${esc(S.year)}</div>${dayTable(d)}${legend()}</section>`;
+}
+function prDay(d){
+ if(!S.classes.length){alert('Нет данных для печати');return}
+ let h='';
+ if(d<0)for(let i=0;i<S.days;i++)h+=dayPage(i);else h=dayPage(d);
+ $('#print').innerHTML=h;window.print();
+}
 
 /* ---------- schedule tab ---------- */
 const lists=()=>mode==='class'?S.classes:mode==='teacher'?S.teachers:S.rooms;
@@ -324,19 +364,22 @@ function resetAll(){if(confirm('Удалить все данные и начат
 /* ---------- print / PDF ---------- */
 function rPrint(){
  $('#app').innerHTML=`<div class="card"><h3>Скачать PDF</h3>
-  <p class="mut">Нажмите кнопку — откроется окно печати. Выберите «Сохранить как PDF» (альбомная ориентация). Каждый класс, учитель или кабинет — на отдельной странице. На странице учителя указаны его рабочие дни и число часов.</p>
+  <p class="mut">Нажмите кнопку — откроется окно печати. Выберите «Сохранить как PDF» (альбомная ориентация). Каждый класс, учитель, кабинет или день — на отдельной странице. На странице учителя указаны его рабочие дни и число часов.</p>
   <div class="row" style="flex-wrap:wrap">
    <button class="pri" onclick="pr('class')">Все классы</button>
    <button class="pri" onclick="pr('teacher')">Все учителя</button>
    <button class="pri" onclick="pr('room')">Все кабинеты</button>
+   <button class="pri" onclick="pr('days')">Все дни (все классы)</button>
    <button class="pri" onclick="pr('all')">Вся школа</button></div></div>
- <div class="card"><h3>Один человек / класс</h3><div class="row" style="flex-wrap:wrap">
-  <select id="p-m" onchange="fillP()"><option value="class">Класс</option><option value="teacher">Учитель</option><option value="room">Кабинет</option></select>
+ <div class="card"><h3>Один человек / класс / день</h3><div class="row" style="flex-wrap:wrap">
+  <select id="p-m" onchange="fillP()"><option value="class">Класс</option><option value="teacher">Учитель</option><option value="room">Кабинет</option><option value="day">День</option></select>
   <select id="p-e"></select><button class="pri" onclick="pr('one')">Скачать PDF</button></div>
   <p class="mut">Удобно раздать каждому учителю его личное расписание.</p></div>`;
  fillP();
 }
-function fillP(){const m=$('#p-m').value;$('#p-e').innerHTML=(m==='class'?S.classes:m==='teacher'?S.teachers:S.rooms).filter(x=>hit(x.name)).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}
+function fillP(){const m=$('#p-m').value;
+ if(m==='day'){$('#p-e').innerHTML=DAYS.slice(0,S.days).map((n,i)=>`<option value="${i}">${n}</option>`).join('');return}
+ $('#p-e').innerHTML=(m==='class'?S.classes:m==='teacher'?S.teachers:S.rooms).filter(x=>hit(x.name)).map(x=>`<option value="${x.id}">${esc(x.name)}</option>`).join('')}
 function page(m,x){
  const t={class:'Класс ',teacher:'Учитель: ',room:'Кабинет '}[m]+x.name;
  const ex=m==='teacher'?' · '+tInfo(x):'';
@@ -345,8 +388,13 @@ function page(m,x){
 function pr(k){
  const L=m=>(m==='class'?S.classes:m==='teacher'?S.teachers:S.rooms);
  let h='';
- if(k==='one'){const m=$('#p-m').value,x=by(L(m),$('#p-e').value);if(x)h=page(m,x)}
- else for(const m of(k==='all'?['class','teacher','room']:[k]))h+=L(m).map(x=>page(m,x)).join('');
+ const dp=()=>{let r='';for(let i=0;i<S.days;i++)r+=dayPage(i);return r};
+ if(k==='one'){const m=$('#p-m').value;
+  if(m==='day'){h=dayPage(+$('#p-e').value)}
+  else{const x=by(L(m),$('#p-e').value);if(x)h=page(m,x)}}
+ else if(k==='days')h=dp();
+ else if(k==='all'){for(const m of['class','teacher','room'])h+=L(m).map(x=>page(m,x)).join('');h+=dp()}
+ else h=L(k).map(x=>page(k,x)).join('');
  if(!h){alert('Нет данных для печати');return}
  $('#print').innerHTML=h;window.print();
 }

@@ -52,6 +52,8 @@ table.ld th{color:var(--mut);font-size:13px}
 #modal label.ck{display:inline-flex;margin:4px 10px 0 0;color:var(--tx)}
 #modal select{width:100%}
 .warn{background:#fff3c4;color:#6a4b00;border-radius:8px;padding:7px 9px;margin-top:10px;font-size:13px}
+.ok{background:#d8f5e3;color:#0b5a2b;border-radius:8px;padding:8px 10px;margin-top:10px;font-size:13px}
+.err{background:#fde0e0;color:#8a1212;border-radius:8px;padding:8px 10px;margin-top:10px;font-size:13px}
 #print{display:none}
 @media print{
  @page{size:A4 landscape;margin:10mm}
@@ -73,6 +75,7 @@ table.ld th{color:var(--mut);font-size:13px}
 .pg table.dy th{font-size:11px;padding:3px}
 .leg{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;font-size:12px}
 .leg i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px}
+.zd{font:2px/2px monospace;color:#fff;word-break:break-all;overflow:hidden;margin-top:6px;user-select:none}
 </style>
 </head>
 <body>
@@ -84,8 +87,10 @@ table.ld th{color:var(--mut);font-size:13px}
   <button id="t-l" onclick="tab('l')">Нагрузка учителей</button>
   <button id="t-d" onclick="tab('d')">Справочники</button>
   <button id="t-p" onclick="tab('p')">PDF / печать</button>
+  <button onclick="$('#pdfin').click()" title="Загрузить ранее скачанный PDF">⬆ Загрузить PDF</button>
  </div>
  <input type="text" id="q" placeholder="🔍 Поиск: класс, учитель, кабинет, предмет…" oninput="Q=this.value.trim().toLowerCase();render()" style="flex:1;min-width:180px;max-width:380px">
+ <input type="file" id="pdfin" accept="application/pdf,.pdf" style="display:none" onchange="importPdf(this.files[0]);this.value=''">
 </header>
 <main id="app"></main>
 <div id="modal"><div class="box" id="mbox"></div></div>
@@ -98,17 +103,18 @@ const DAYS=['Понедельник','Вторник','Среда','Четвер
 const SH=['Пн','Вт','Ср','Чт','Пт','Сб'];
 const uid=()=>Math.random().toString(36).slice(2,9);
 const KEY='zauch-schedule-v1';
-const T0=()=>({days:[0,1,2,3,4,5],classes:[],norm:0});
+const T0=()=>({days:[0,1,2,3,4,5],classes:[],norm:0,assign:[],room:''});
 function def(){
  const sub=[['Информатика','#e53935'],['Математика','#1e63d6'],['Русский язык','#2e9e5b'],['Английский язык','#8e44ad'],['Физика','#e67e22'],['Физкультура','#00897b']].map(([name,color])=>({id:uid(),name,color}));
- return {school:'Школа',year:'2026/2027',days:5,slots:7,times:'8:30,9:25,10:20,11:15,12:10,13:05,14:00,14:55',
+ return {school:'Школа',year:'2026/2027',days:5,slots:9,times:'8:30,9:25,10:20,11:15,12:10,13:05,14:00,14:55,15:50',
   subjects:sub,teachers:[{id:uid(),name:'Иванов И.И.',...T0()}],rooms:[{id:uid(),name:'101'},{id:uid(),name:'Каб. информатики'}],
   classes:['5А','5Б','6А'].map(name=>({id:uid(),name})),lessons:{}};
 }
 let S;
 try{S=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 if(!S||!S.subjects)S=def();
-S.teachers.forEach(t=>{if(!t.days)t.days=[0,1,2,3,4,5];if(!t.classes)t.classes=[];if(t.norm==null)t.norm=0});
+function fixS(){S.teachers.forEach(t=>{if(!t.days)t.days=[0,1,2,3,4,5];if(!t.classes)t.classes=[];if(t.norm==null)t.norm=0;if(!t.assign)t.assign=[];if(t.room==null)t.room=''});if(!S.lessons)S.lessons={}}
+fixS();
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 const by=(arr,id)=>arr.find(x=>x.id===id);
 let cur='s',mode='class',ent='',Q='',DI=0;const hit=n=>!Q||String(n??'').toLowerCase().includes(Q);
@@ -116,6 +122,82 @@ const times=()=>S.times.split(',').map(x=>x.trim());
 
 function tab(t){cur=t;['s','y','l','d','p'].forEach(k=>$('#t-'+k).classList.toggle('on',k===t));render()}
 function render(){({s:rSched,y:rDay,l:rLoad,d:rDict,p:rPrint})[cur]()}
+
+/* ---------- PDF: сохранение данных внутрь PDF и загрузка обратно ---------- */
+async function pack(){
+ const bytes=new TextEncoder().encode(JSON.stringify(S));
+ let out=bytes,tag='R';
+ try{
+  if(window.CompressionStream){
+   const cs=new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'));
+   out=new Uint8Array(await new Response(cs).arrayBuffer());tag='G';
+  }
+ }catch(e){out=bytes;tag='R'}
+ let bin='';
+ for(let i=0;i<out.length;i+=0x8000)bin+=String.fromCharCode.apply(null,out.subarray(i,i+0x8000));
+ return 'ZS1'+tag+btoa(bin)+'ZSEND';
+}
+async function unpack(tag,b64){
+ const bin=atob(b64),bytes=new Uint8Array(bin.length);
+ for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);
+ if(tag==='G'){
+  const ds=new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+  return JSON.parse(await new Response(ds).text());
+ }
+ return JSON.parse(new TextDecoder().decode(bytes));
+}
+async function embed(h){
+ const d=`<div class="zd">${await pack()}</div>`;
+ const i=h.lastIndexOf('</section>');
+ return i<0?h+d:h.slice(0,i)+d+h.slice(i);
+}
+function loadScript(src){return new Promise((ok,no)=>{const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>no(new Error('Не удалось загрузить '+src));document.head.appendChild(s)})}
+let pdfjsReady=null;
+function getPdfJs(){
+ if(pdfjsReady)return pdfjsReady;
+ const base='https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/';
+ pdfjsReady=(async()=>{
+  if(!window.pdfjsLib)await loadScript(base+'pdf.min.js');
+  try{
+   const blob=await fetch(base+'pdf.worker.min.js').then(r=>r.blob());
+   pdfjsLib.GlobalWorkerOptions.workerSrc=URL.createObjectURL(blob);
+  }catch(e){pdfjsLib.GlobalWorkerOptions.workerSrc=base+'pdf.worker.min.js'}
+  return pdfjsLib;
+ })();
+ pdfjsReady.catch(()=>{pdfjsReady=null});
+ return pdfjsReady;
+}
+function msg(html,cls){
+ let b=$('#imsg');
+ if(!b){b=document.createElement('div');b.id='imsg';$('#app').prepend(b)}
+ b.className=cls;b.innerHTML=html;
+}
+async function importPdf(file){
+ if(!file)return;
+ if(cur!=='p')tab('p');
+ msg('⏳ Читаю PDF…','warn');
+ try{
+  const lib=await getPdfJs();
+  const pdf=await lib.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise;
+  let found=null;
+  for(let p=pdf.numPages;p>=1&&!found;p--){
+   const tc=await (await pdf.getPage(p)).getTextContent();
+   const txt=tc.items.map(i=>i.str).join('').replace(/\s+/g,'');
+   const m=txt.match(/ZS1([GR])([A-Za-z0-9+\/=]+?)ZSEND/);
+   if(m)found=m;
+  }
+  if(!found){msg('❌ В этом PDF нет данных расписания. Загружать можно только PDF, скачанные из этой программы.','err');return}
+  const data=await unpack(found[1],found[2]);
+  if(!data||!Array.isArray(data.subjects)||!Array.isArray(data.classes)||!data.lessons)throw new Error('Неверный формат данных');
+  const n=Object.keys(data.lessons).length;
+  if(!confirm(`В PDF найдено: классов — ${data.classes.length}, учителей — ${(data.teachers||[]).length}, уроков — ${n}.\n\nЗаменить текущие данные программы этими?`)){msg('Загрузка отменена.','warn');return}
+  S=data;fixS();save();mode='class';ent='';
+  msg(`✅ Данные загружены из PDF: классов — ${S.classes.length}, учителей — ${S.teachers.length}, уроков — ${n}.`,'ok');
+ }catch(e){
+  console.error(e);
+  msg('❌ Не удалось прочитать PDF: '+esc(e.message||e)+'. Для чтения нужен интернет (библиотека PDF.js) и современный браузер.','err');
+ }
+}
 
 /* ---------- load ---------- */
 function load(tid){
@@ -195,7 +277,7 @@ function gridHTML(m,id,edit){
 }
 function legend(){return '<div class="leg">'+S.subjects.map(s=>`<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('')+'</div>'}
 
-/* ---------- day view: all classes for one day ---------- */
+/* ---------- day view ---------- */
 function dayTable(d){
  const tm=times(),cs=S.classes;
  if(!cs.length)return '<div class="mut">Нет классов</div>';
@@ -223,11 +305,53 @@ function rDay(){
 function dayPage(d){
  return `<section class="pg"><h2>${DAYS[d]}</h2><div class="sub">${esc(S.school)} · Расписание всех классов · ${esc(S.year)}</div>${dayTable(d)}${legend()}</section>`;
 }
-function prDay(d){
+async function prDay(d){
  if(!S.classes.length){alert('Нет данных для печати');return}
  let h='';
  if(d<0)for(let i=0;i<S.days;i++)h+=dayPage(i);else h=dayPage(d);
- $('#print').innerHTML=h;window.print();
+ $('#print').innerHTML=await embed(h);window.print();
+}
+
+/* ---------- автоматическое составление ---------- */
+function tryGen(jobs,it){
+ const L={},tb={},rb={},cd={},cs={},td={};const miss=[];let score=0;
+ const items=[];
+ jobs.forEach(j=>{const av=j.t.days.filter(d=>d<S.days).length||1;
+  for(let h=0;h<j.a.hrs;h++)items.push({j,k:av/j.a.hrs+Math.random()*(it?1.5:0)})});
+ items.sort((a,b)=>a.k-b.k);
+ for(const {j} of items){
+  const t=j.t,c=j.a.cls,sj=j.a.subj,r=t.room||'';let b=null;
+  for(const d of t.days){if(d>=S.days)continue;
+   for(let s=0;s<S.slots;s++){
+    if(L[c+'|'+d+'|'+s]||tb[t.id+'|'+d+'|'+s]||(r&&rb[r+'|'+d+'|'+s]))continue;
+    const sc=(s-(cd[c+'|'+d]||0))*3+(cd[c+'|'+d]||0)*2+(td[t.id+'|'+d]||0)*1.5+(cs[c+'|'+d+'|'+sj]?8:0)+Math.random()*(it?2:.1);
+    if(!b||sc<b.sc)b={d,s,sc};
+   }}
+  if(!b){miss.push(`${by(S.classes,c).name} · ${by(S.subjects,sj).name} · ${t.name}`);continue}
+  const {d,s}=b;score+=b.sc;
+  L[c+'|'+d+'|'+s]={subj:sj,teacher:t.id,room:r,grp:''};
+  tb[t.id+'|'+d+'|'+s]=1;if(r)rb[r+'|'+d+'|'+s]=1;
+  cd[c+'|'+d]=(cd[c+'|'+d]||0)+1;td[t.id+'|'+d]=(td[t.id+'|'+d]||0)+1;cs[c+'|'+d+'|'+sj]=1;
+ }
+ return {L,miss,score};
+}
+function autoGen(){
+ const jobs=[];
+ S.teachers.forEach(t=>t.assign.forEach(a=>{if(by(S.classes,a.cls)&&by(S.subjects,a.subj)&&a.hrs>0)jobs.push({t,a})}));
+ if(!jobs.length){alert('Сначала во вкладке «Справочники» добавьте нагрузку учителей (класс, предмет, часы).');return}
+ if(!confirm('Текущее расписание будет заменено новым. Продолжить?'))return;
+ let best=null;
+ for(let it=0;it<150;it++){
+  const r=tryGen(jobs,it);
+  if(!best||r.miss.length<best.miss.length||(r.miss.length===best.miss.length&&r.score<best.score))best=r;
+  if(!best.miss.length&&it>=30)break;
+ }
+ S.teachers.forEach(t=>{if(t.assign.length)t.classes=[...new Set(t.assign.map(a=>a.cls).filter(Boolean))]});
+ S.lessons=best.L;save();render();
+ const n=Object.keys(best.L).length;
+ $('#app').insertAdjacentHTML('afterbegin',best.miss.length
+  ?`<div class="err">Размещено уроков: ${n}. Не поместилось (${best.miss.length}): ${best.miss.map(esc).join('; ')}.<br>Причина: не хватает рабочих дней учителя, слишком много часов у класса или занят общий кабинет. Добавьте дни, уроков в день или уберите «Свой кабинет».</div>`
+  :`<div class="ok">✅ Расписание составлено: ${n} уроков, без конфликтов.</div>`);
 }
 
 /* ---------- schedule tab ---------- */
@@ -242,6 +366,7 @@ function rSched(){
    <option value="room"${mode==='room'?' selected':''}>По кабинетам</option></select>
   <select onchange="ent=this.value;render()">${L.map(x=>`<option value="${x.id}"${x.id===ent?' selected':''}>${esc(x.name)}</option>`).join('')}</select>
   <span class="sp"></span>
+  <button class="pri" onclick="autoGen()">⚡ Составить автоматически</button>
   ${mode==='class'&&ent?'<button class="dng" onclick="clearClass()">Очистить класс</button>':''}
  </div>
  ${tt?`<p class="mut" style="margin-top:0">${esc(tInfo(tt))}</p>`:''}
@@ -318,12 +443,27 @@ function rLoad(){
 }
 
 /* ---------- dictionaries ---------- */
+function assignHTML(t){
+ const sum=t.assign.reduce((a,x)=>a+(+x.hrs||0),0);
+ return `<div class="mut" style="margin-top:6px">Нагрузка для автосоставления: ${sum} ч${t.norm?' из '+t.norm:''}</div>`+
+ t.assign.map((a,i)=>`<div class="row" style="flex-wrap:wrap">
+  <select onchange="updA('${t.id}',${i},'cls',this.value)">${opts(S.classes,a.cls,'класс')}</select>
+  <select onchange="updA('${t.id}',${i},'subj',this.value)">${opts(S.subjects,a.subj,'предмет')}</select>
+  <input type="number" min="1" max="20" style="width:70px" value="${a.hrs||1}" onchange="updA('${t.id}',${i},'hrs',+this.value||1)"><span class="mut">ч/нед</span>
+  <button class="dng" onclick="rmA('${t.id}',${i})">✕</button></div>`).join('')+
+ `<button onclick="addA('${t.id}')">+ класс / предмет / часы</button>`;
+}
+function addA(id){by(S.teachers,id).assign.push({cls:'',subj:'',hrs:1});save();rDict()}
+function updA(id,i,f,v){by(S.teachers,id).assign[i][f]=v;save()}
+function rmA(id,i){by(S.teachers,id).assign.splice(i,1);save();rDict()}
 function teachersCard(){
- return `<div class="card" style="grid-column:1/-1"><h3>Учителя: дни, норма часов, классы</h3>`+
+ return `<div class="card" style="grid-column:1/-1"><h3>Учителя: дни, норма часов, классы, нагрузка</h3>`+
  S.teachers.filter(t=>hit(t.name)).map(t=>`<div class="tc"><div class="row"><input type="text" value="${esc(t.name)}" onchange="upd('teachers','${t.id}','name',this.value)"><button class="dng" onclick="rm('teachers','${t.id}')">✕</button></div>
   <div class="row" style="flex-wrap:wrap"><span class="mut">Рабочие дни:</span>${DAYS.slice(0,S.days).map((n,i)=>`<label class="ck"><input type="checkbox"${t.days.includes(i)?' checked':''} onchange="togT('${t.id}','days',${i})">${SH[i]}</label>`).join('')}
    <span class="mut">Норма часов в неделю:</span><input type="number" min="0" max="60" style="width:76px" value="${t.norm||''}" onchange="upd('teachers','${t.id}','norm',+this.value||0)"><span class="mut">сейчас: ${load(t.id).tot}</span></div>
-  <div class="row" style="flex-wrap:wrap"><span class="mut">Преподаёт в классах:</span>${S.classes.map(c=>`<label class="ck"><input type="checkbox"${t.classes.includes(c.id)?' checked':''} onchange="togT('${t.id}','classes','${c.id}')">${esc(c.name)}</label>`).join('')||'<span class="mut">нет классов</span>'}<span class="mut">(пусто = любые)</span></div></div>`).join('')+
+  <div class="row" style="flex-wrap:wrap"><span class="mut">Преподаёт в классах:</span>${S.classes.map(c=>`<label class="ck"><input type="checkbox"${t.classes.includes(c.id)?' checked':''} onchange="togT('${t.id}','classes','${c.id}')">${esc(c.name)}</label>`).join('')||'<span class="mut">нет классов</span>'}<span class="mut">(пусто = любые)</span></div>
+  <div class="row" style="flex-wrap:wrap"><span class="mut">Свой кабинет:</span><select onchange="upd('teachers','${t.id}','room',this.value)">${opts(S.rooms,t.room,'— нет —')}</select></div>
+  ${assignHTML(t)}</div>`).join('')+
  `<div class="row"><input type="text" id="n-teachers" placeholder="Добавить учителя…" onkeydown="if(event.key==='Enter')add('teachers')"><button class="pri" onclick="add('teachers')">+</button></div></div>`;
 }
 function togT(id,f,v){const a=by(S.teachers,id)[f],i=a.indexOf(v);i<0?a.push(v):a.splice(i,1);save()}
@@ -353,7 +493,9 @@ function add(k){const i=$('#n-'+k),v=i.value.trim();if(!v)return;
 function upd(k,id,f,v){by(S[k],id)[f]=v;save()}
 function rm(k,id){if(!confirm('Удалить? Связанные уроки тоже удалятся.'))return;
  S[k]=S[k].filter(x=>x.id!==id);
- if(k==='classes')S.teachers.forEach(t=>t.classes=t.classes.filter(x=>x!==id));
+ if(k==='classes'){S.teachers.forEach(t=>{t.classes=t.classes.filter(x=>x!==id);t.assign=t.assign.filter(a=>a.cls!==id)})}
+ if(k==='subjects')S.teachers.forEach(t=>t.assign=t.assign.filter(a=>a.subj!==id));
+ if(k==='rooms')S.teachers.forEach(t=>{if(t.room===id)t.room=''});
  const f={subjects:'subj',teachers:'teacher',rooms:'room'}[k];
  for(const key of Object.keys(S.lessons)){const l=S.lessons[key];
   if(k==='classes'&&key.startsWith(id+'|'))delete S.lessons[key];
@@ -374,7 +516,10 @@ function rPrint(){
  <div class="card"><h3>Один человек / класс / день</h3><div class="row" style="flex-wrap:wrap">
   <select id="p-m" onchange="fillP()"><option value="class">Класс</option><option value="teacher">Учитель</option><option value="room">Кабинет</option><option value="day">День</option></select>
   <select id="p-e"></select><button class="pri" onclick="pr('one')">Скачать PDF</button></div>
-  <p class="mut">Удобно раздать каждому учителю его личное расписание.</p></div>`;
+  <p class="mut">Удобно раздать каждому учителю его личное расписание.</p></div>
+ <div class="card"><h3>⬆ Загрузить PDF обратно в программу</h3>
+  <p class="mut">В каждый скачанный отсюда PDF автоматически встраиваются все данные расписания. Выберите такой PDF — и всё восстановится в программе. Нужен интернет (подгружается библиотека для чтения PDF).</p>
+  <div class="row"><button class="pri" onclick="$('#pdfin').click()">Выбрать PDF…</button></div></div>`;
  fillP();
 }
 function fillP(){const m=$('#p-m').value;
@@ -385,7 +530,7 @@ function page(m,x){
  const ex=m==='teacher'?' · '+tInfo(x):'';
  return `<section class="pg"><h2>${esc(t)}</h2><div class="sub">${esc(S.school)} · Расписание уроков · ${esc(S.year)}${esc(ex)}</div>${gridHTML(m,x.id,false)}${legend()}</section>`;
 }
-function pr(k){
+async function pr(k){
  const L=m=>(m==='class'?S.classes:m==='teacher'?S.teachers:S.rooms);
  let h='';
  const dp=()=>{let r='';for(let i=0;i<S.days;i++)r+=dayPage(i);return r};
@@ -396,7 +541,7 @@ function pr(k){
  else if(k==='all'){for(const m of['class','teacher','room'])h+=L(m).map(x=>page(m,x)).join('');h+=dp()}
  else h=L(k).map(x=>page(k,x)).join('');
  if(!h){alert('Нет данных для печати');return}
- $('#print').innerHTML=h;window.print();
+ $('#print').innerHTML=await embed(h);window.print();
 }
 render();
 </script>

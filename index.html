@@ -17,6 +17,7 @@ h1{font-size:18px;margin:0 8px 0 0}
 button,select,input{font:inherit;color:var(--tx)}
 button{border:1px solid var(--bd);background:var(--card);padding:7px 12px;border-radius:9px;cursor:pointer}
 button:hover{border-color:var(--ac)}
+button:disabled{opacity:.4;cursor:default}
 button.on,button.pri{background:var(--ac);border-color:var(--ac);color:#fff}
 button.dng{color:#d33}
 select,input[type=text],input[type=number]{border:1px solid var(--bd);background:var(--card);padding:7px 9px;border-radius:9px;max-width:100%}
@@ -29,8 +30,14 @@ table.g th{font-weight:600;font-size:13px;color:var(--mut);padding:6px}
 table.g th.t small{display:block;font-weight:400}
 td.c{height:78px;min-width:120px;border-radius:10px;background:var(--card);border:1px dashed var(--bd);vertical-align:top;padding:6px 8px;font-size:13px;cursor:pointer}
 td.c.f{border-style:solid;border-color:transparent;color:#fff}
+td.c.f[draggable=true]{cursor:grab}
 td.c b{display:block;font-size:14px}
 td.c.bad{outline:3px solid #ffd400;outline-offset:-3px}
+td.c.dragging{opacity:.35}
+td.c.dok{outline:3px solid #2ecc71;outline-offset:-3px;background:#2ecc7122}
+td.c.dsw{outline:3px solid #3498db;outline-offset:-3px}
+td.c.dno{outline:3px solid #e74c3c;outline-offset:-3px;opacity:.5}
+td.c.dhov{box-shadow:0 0 0 4px var(--ac)}
 td.ro{cursor:default}
 table.dy td.c{min-width:110px;height:70px}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:14px}
@@ -54,6 +61,8 @@ table.ld th{color:var(--mut);font-size:13px}
 .warn{background:#fff3c4;color:#6a4b00;border-radius:8px;padding:7px 9px;margin-top:10px;font-size:13px}
 .ok{background:#d8f5e3;color:#0b5a2b;border-radius:8px;padding:8px 10px;margin-top:10px;font-size:13px}
 .err{background:#fde0e0;color:#8a1212;border-radius:8px;padding:8px 10px;margin-top:10px;font-size:13px}
+.lg2{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:12px;margin:0 0 8px;color:var(--mut)}
+.lg2 i{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:4px;vertical-align:-2px}
 #print{display:none}
 @media print{
  @page{size:A4 landscape;margin:10mm}
@@ -117,8 +126,16 @@ function fixS(){S.teachers.forEach(t=>{if(!t.days)t.days=[0,1,2,3,4,5];if(!t.cla
 fixS();
 function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
 const by=(arr,id)=>arr.find(x=>x.id===id);
-let cur='s',mode='class',ent='',Q='',DI=0;const hit=n=>!Q||String(n??'').toLowerCase().includes(Q);
+let cur='s',mode='class',ent='',Q='',DI=0,CHKON=false,DR=null;const hit=n=>!Q||String(n??'').toLowerCase().includes(Q);
 const times=()=>S.times.split(',').map(x=>x.trim());
+
+/* ---------- отмена действий ---------- */
+const HIST=[];
+function pushH(){HIST.push(JSON.stringify(S.lessons));if(HIST.length>60)HIST.shift()}
+function undo(){if(!HIST.length)return;S.lessons=JSON.parse(HIST.pop());save();render()}
+document.addEventListener('keydown',e=>{
+ if((e.ctrlKey||e.metaKey)&&!e.shiftKey&&(e.key==='z'||e.key==='я')&&!/INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)&&cur==='s'){e.preventDefault();undo()}
+});
 
 function tab(t){cur=t;['s','y','l','d','p'].forEach(k=>$('#t-'+k).classList.toggle('on',k===t));render()}
 function render(){({s:rSched,y:rDay,l:rLoad,d:rDict,p:rPrint})[cur]()}
@@ -191,7 +208,7 @@ async function importPdf(file){
   if(!data||!Array.isArray(data.subjects)||!Array.isArray(data.classes)||!data.lessons)throw new Error('Неверный формат данных');
   const n=Object.keys(data.lessons).length;
   if(!confirm(`В PDF найдено: классов — ${data.classes.length}, учителей — ${(data.teachers||[]).length}, уроков — ${n}.\n\nЗаменить текущие данные программы этими?`)){msg('Загрузка отменена.','warn');return}
-  S=data;fixS();save();mode='class';ent='';
+  S=data;fixS();save();mode='class';ent='';HIST.length=0;
   msg(`✅ Данные загружены из PDF: классов — ${S.classes.length}, учителей — ${S.teachers.length}, уроков — ${n}.`,'ok');
  }catch(e){
   console.error(e);
@@ -242,22 +259,23 @@ function cellData(m,id,d,s){
  r.out.unshift(hits.map(h=>h[0]?h[0].name:'').join(' + ')+' класс');
  return r;
 }
-function conflict(tg,d,s,l){
+function conflictIn(LS,tg,d,s,l){
  const r=[];if(!l||!l.subj)return r;
  const t=by(S.teachers,l.teacher);
  if(t){
-  if(!t.days.includes(d))r.push(t.name+' не работает в этот день');
+  if(!t.days.includes(d))r.push(t.name+' не работает в '+DAYS[d].toLowerCase());
   tg.forEach(c=>{const cl=by(S.classes,c);if(cl&&t.classes.length&&!t.classes.includes(c))r.push(t.name+' не назначен на класс '+cl.name)});
  }
- for(const k in S.lessons){
+ for(const k in LS){
   const [c,dd,ss]=k.split('|');if(tg.includes(c)||+dd!==d||+ss!==s)continue;
-  const o=S.lessons[k],cl=by(S.classes,c);if(!cl)continue;
+  const o=LS[k],cl=by(S.classes,c);if(!cl)continue;
   if(l.grp&&o.grp===l.grp)continue;
   if(l.teacher&&o.teacher===l.teacher)r.push('Учитель уже ведёт урок в '+cl.name);
   if(l.room&&o.room===l.room)r.push('Кабинет занят классом '+cl.name);
  }
  return [...new Set(r)];
 }
+const conflict=(tg,d,s,l)=>conflictIn(S.lessons,tg,d,s,l);
 function gridHTML(m,id,edit){
  const tm=times();
  let h='<table class="g"><tr><th></th>'+DAYS.slice(0,S.days).map(x=>`<th>${x}</th>`).join('')+'</tr>';
@@ -268,7 +286,7 @@ function gridHTML(m,id,edit){
    const bad=edit&&c&&conflict([id],d,s,S.lessons[id+'|'+d+'|'+s]).length;
    const cls='c'+(c?' f':'')+(bad?' bad':'')+(edit?'':' ro');
    const st=c?` style="background:${c.sb.color}"`:'';
-   const oc=edit?` onclick="openCell('${id}',${d},${s})"`:'';
+   const oc=edit?` onclick="openCell('${id}',${d},${s})" data-d="${d}" data-s="${s}" ondragover="dO(event)" ondragleave="this.classList.remove('dhov')" ondrop="dD(event,'${id}',${d},${s})"${c?` draggable="true" ondragstart="dS(event,'${id}',${d},${s})" ondragend="dE()"`:''}`:'';
    h+=`<td class="${cls}"${st}${oc}>${c?`<b>${esc(c.sb.name)}</b>${c.out.map(esc).join('<br>')}${bad?'<br>⚠ конфликт':''}`:''}</td>`;
   }
   h+='</tr>';
@@ -276,6 +294,86 @@ function gridHTML(m,id,edit){
  return h+'</table>';
 }
 function legend(){return '<div class="leg">'+S.subjects.map(s=>`<span><i style="background:${s.color}"></i>${esc(s.name)}</span>`).join('')+'</div>'}
+
+/* ---------- перенос уроков (drag & drop + кнопка «Перенести») ---------- */
+function moveCheck(cid,d,s,d2,s2){
+ const k=cid+'|'+d+'|'+s,l=S.lessons[k];
+ if(!l||(d===d2&&s===s2))return null;
+ const members=l.grp?S.classes.filter(c=>S.lessons[c.id+'|'+d+'|'+s]?.grp===l.grp).map(c=>c.id):[cid];
+ const trial={...S.lessons};
+ members.forEach(c=>delete trial[c+'|'+d+'|'+s]);
+ let sw=null;
+ if(members.length===1){
+  const o=trial[cid+'|'+d2+'|'+s2];
+  if(o){if(o.grp)return {hard:'В целевой ячейке совместный урок — сначала удалите или перенесите его.'};sw=o;delete trial[cid+'|'+d2+'|'+s2]}
+ }else{
+  for(const c of members)if(trial[c+'|'+d2+'|'+s2])return {hard:'Совместный урок можно перенести только в пустую ячейку (у класса '+by(S.classes,c).name+' она занята).'};
+ }
+ members.forEach(c=>trial[c+'|'+d2+'|'+s2]={...l});
+ if(sw)trial[cid+'|'+d+'|'+s]={...sw};
+ const reasons=conflictIn(trial,members,d2,s2,l);
+ if(sw)conflictIn(trial,[cid],d,s,sw).forEach(x=>reasons.push('Урок, который меняется местами: '+x));
+ return {trial,reasons:[...new Set(reasons)],swap:!!sw};
+}
+function dS(e,cid,d,s){
+ DR=[cid,d,s];
+ e.dataTransfer.setData('text/plain','lesson');e.dataTransfer.effectAllowed='move';
+ const src=e.currentTarget;
+ setTimeout(()=>{
+  src.classList.add('dragging');
+  document.querySelectorAll('td[data-d]').forEach(td=>{
+   const r=moveCheck(cid,d,s,+td.dataset.d,+td.dataset.s);if(!r)return;
+   td.classList.add(r.hard||r.reasons.length?'dno':r.swap?'dsw':'dok');
+  });
+ },0);
+}
+function dE(){DR=null;document.querySelectorAll('td.c').forEach(td=>td.classList.remove('dragging','dok','dsw','dno','dhov'))}
+function dO(e){if(!DR)return;e.preventDefault();e.dataTransfer.dropEffect='move';e.currentTarget.classList.add('dhov')}
+function dD(e,cid,d,s){
+ e.preventDefault();if(!DR)return;
+ const [sc,sd,ss]=DR;dE();
+ if(sc!==cid)return;
+ doMove(sc,sd,ss,d,s);
+}
+function doMove(cid,d,s,d2,s2){
+ const r=moveCheck(cid,d,s,d2,s2);if(!r)return;
+ if(r.hard){alert('⛔ '+r.hard);return}
+ if(r.reasons.length&&!confirm('⚠ Конфликты при переносе:\n\n• '+r.reasons.join('\n• ')+'\n\nВсё равно перенести?'))return;
+ pushH();S.lessons=r.trial;save();render();
+}
+function moveBtn(){
+ const [c,d,s]=window._k,d2=+$('#mv-d').value,s2=+$('#mv-s').value;
+ closeM();doMove(c,d,s,d2,s2);
+}
+function mvPrev(){
+ const [c,d,s]=window._k,d2=+$('#mv-d').value,s2=+$('#mv-s').value,r=moveCheck(c,d,s,d2,s2);
+ $('#mv-i').innerHTML=!r?'':r.hard?`<div class="err">⛔ ${esc(r.hard)}</div>`:r.reasons.length?`<div class="warn">⚠ ${r.reasons.map(esc).join('<br>⚠ ')}</div>`:`<div class="ok">✅ Конфликтов нет${r.swap?' (уроки поменяются местами)':''}</div>`;
+}
+
+/* ---------- проверка всех конфликтов ---------- */
+function allConflicts(){
+ const res=[],T={},R={};
+ for(const k in S.lessons){
+  const [c,d,s]=k.split('|'),l=S.lessons[k],cl=by(S.classes,c);if(!cl)continue;
+  const t=by(S.teachers,l.teacher);
+  if(t&&!t.days.includes(+d))res.push({c,m:`${cl.name}, ${SH[+d]} ${+s+1} урок: ${t.name} не работает в этот день`});
+  if(t&&t.classes.length&&!t.classes.includes(c))res.push({c,m:`${cl.name}: ${t.name} не назначен на этот класс`});
+  const g=l.grp||k;
+  if(l.teacher)(T[l.teacher+'|'+d+'|'+s]=T[l.teacher+'|'+d+'|'+s]||[]).push({c,g});
+  if(l.room)(R[l.room+'|'+d+'|'+s]=R[l.room+'|'+d+'|'+s]||[]).push({c,g});
+ }
+ const dup=(M,kind,arr)=>{for(const key in M){const it=M[key];if(new Set(it.map(x=>x.g)).size<2)continue;
+  const [id,d,s]=key.split('|'),o=by(arr,id);
+  res.push({c:it[0].c,m:`${SH[+d]} ${+s+1} урок: ${kind} ${o?o.name:''} занят одновременно — ${it.map(x=>by(S.classes,x.c)?.name).join(', ')}`})}};
+ dup(T,'учитель',S.teachers);dup(R,'кабинет',S.rooms);
+ return res;
+}
+function chkHTML(){
+ if(!CHKON)return '';
+ const r=allConflicts();
+ return `<div class="card"><div class="row"><h3 style="margin:0">🔍 Проверка конфликтов</h3><span class="sp"></span><button onclick="CHKON=false;render()">✕</button></div>`+
+ (r.length?`<div class="err">Найдено конфликтов: ${r.length}</div>`+r.slice(0,40).map(x=>`<div class="row"><button onclick="go('class','${x.c}')">Открыть</button><span>${esc(x.m)}</span></div>`).join(''):'<div class="ok">✅ Конфликтов нет: учителя и кабинеты нигде не пересекаются, все учителя работают в свои дни.</div>')+`</div>`;
+}
 
 /* ---------- day view ---------- */
 function dayTable(d){
@@ -339,19 +437,20 @@ function autoGen(){
  const jobs=[];
  S.teachers.forEach(t=>t.assign.forEach(a=>{if(by(S.classes,a.cls)&&by(S.subjects,a.subj)&&a.hrs>0)jobs.push({t,a})}));
  if(!jobs.length){alert('Сначала во вкладке «Справочники» добавьте нагрузку учителей (класс, предмет, часы).');return}
- if(!confirm('Текущее расписание будет заменено новым. Продолжить?'))return;
+ if(!confirm('Текущее расписание будет заменено новым (можно отменить кнопкой «Отменить»). Продолжить?'))return;
  let best=null;
  for(let it=0;it<150;it++){
   const r=tryGen(jobs,it);
   if(!best||r.miss.length<best.miss.length||(r.miss.length===best.miss.length&&r.score<best.score))best=r;
   if(!best.miss.length&&it>=30)break;
  }
+ pushH();
  S.teachers.forEach(t=>{if(t.assign.length)t.classes=[...new Set(t.assign.map(a=>a.cls).filter(Boolean))]});
  S.lessons=best.L;save();render();
  const n=Object.keys(best.L).length;
  $('#app').insertAdjacentHTML('afterbegin',best.miss.length
   ?`<div class="err">Размещено уроков: ${n}. Не поместилось (${best.miss.length}): ${best.miss.map(esc).join('; ')}.<br>Причина: не хватает рабочих дней учителя, слишком много часов у класса или занят общий кабинет. Добавьте дни, уроков в день или уберите «Свой кабинет».</div>`
-  :`<div class="ok">✅ Расписание составлено: ${n} уроков, без конфликтов.</div>`);
+  :`<div class="ok">✅ Расписание составлено: ${n} уроков, без конфликтов. Урок можно перетащить мышкой в другую ячейку.</div>`);
 }
 
 /* ---------- schedule tab ---------- */
@@ -366,12 +465,15 @@ function rSched(){
    <option value="room"${mode==='room'?' selected':''}>По кабинетам</option></select>
   <select onchange="ent=this.value;render()">${L.map(x=>`<option value="${x.id}"${x.id===ent?' selected':''}>${esc(x.name)}</option>`).join('')}</select>
   <span class="sp"></span>
+  <button onclick="undo()"${HIST.length?'':' disabled'} title="Ctrl+Z">↶ Отменить</button>
+  <button onclick="CHKON=!CHKON;render()">🔍 Проверить конфликты</button>
   <button class="pri" onclick="autoGen()">⚡ Составить автоматически</button>
   ${mode==='class'&&ent?'<button class="dng" onclick="clearClass()">Очистить класс</button>':''}
  </div>
+ ${chkHTML()}
  ${tt?`<p class="mut" style="margin-top:0">${esc(tInfo(tt))}</p>`:''}
- ${searchHTML()}${ent?`<div class="wrap">${gridHTML(mode,ent,mode==='class')}</div>${legend()}
- <p class="mut">${mode==='class'?'Нажмите на ячейку, чтобы выбрать предмет, учителя, кабинет и, если нужно, объединить с другими классами (совместный урок). Жёлтая рамка — конфликт.':'Это просмотр: расписание собирается автоматически из классов.'} Всё сохраняется автоматически.</p>`
+ ${searchHTML()}${mode==='class'&&ent?'<div class="lg2"><span>При перетаскивании урока:</span><span><i style="background:#2ecc71"></i>свободно, без конфликтов</span><span><i style="background:#3498db"></i>поменяются местами</span><span><i style="background:#e74c3c"></i>конфликт</span></div>':''}${ent?`<div class="wrap">${gridHTML(mode,ent,mode==='class')}</div>${legend()}
+ <p class="mut">${mode==='class'?'Перетащите карточку урока в другую ячейку (например, с 4-го на 7-й урок) — если ячейка занята, уроки поменяются местами. Программа подсветит безопасные места и предупредит о конфликте. На телефоне: нажмите на урок → «Перенести». Жёлтая рамка — конфликт.':'Это просмотр: расписание собирается автоматически из классов.'} Всё сохраняется автоматически.</p>`
  :'<div class="card">Сначала добавьте данные во вкладке «Справочники».</div>'}`;
 }
 function go(m,id){mode=m;ent=id;Q='';$('#q').value='';cur='s';tab('s')}
@@ -391,20 +493,25 @@ function searchHTML(){
  return `<div class="card"><h3>Результаты поиска</h3>${sec('Классы',cl)}${sec('Учителя',te)}${sec('Кабинеты',ro)}${sec('Уроки по предмету'+(ls.length>30?' (первые 30)':''),ls.slice(0,30))}${all?'':'<span class="mut">Ничего не найдено</span>'}<p class="mut">Нажмите на результат, чтобы открыть расписание. Поиск также фильтрует вкладки «Нагрузка», «Справочники» и «PDF / печать».</p></div>`;
 }
 function clearClass(){if(!confirm('Очистить расписание этого класса?'))return;
- for(const k of Object.keys(S.lessons))if(k.startsWith(ent+'|'))delete S.lessons[k];save();render()}
+ pushH();for(const k of Object.keys(S.lessons))if(k.startsWith(ent+'|'))delete S.lessons[k];save();render()}
 function opts(arr,sel,empty){return `<option value="">${empty}</option>`+arr.map(x=>`<option value="${x.id}"${x.id===sel?' selected':''}>${esc(x.name)}</option>`).join('')}
 function openCell(cid,d,s){
  const l=S.lessons[cid+'|'+d+'|'+s]||{};
  window._k=[cid,d,s];window._g=l.grp||'';
  const ws=l.grp?S.classes.filter(c=>c.id!==cid&&S.lessons[c.id+'|'+d+'|'+s]?.grp===l.grp).map(c=>c.id):[];
  const others=S.classes.filter(c=>c.id!==cid);
+ const has=!!l.subj;
  $('#mbox').innerHTML=`<h3 style="margin:0">${esc(by(S.classes,cid).name)} · ${DAYS[d]} · ${s+1} урок</h3>
  <label>Предмет</label><select id="m-s" onchange="chk()">${opts(S.subjects,l.subj,'— выберите —')}</select>
  <label>Учитель</label><select id="m-t" onchange="chk()">${opts(S.teachers,l.teacher,'— не указан —')}</select>
  <label>Кабинет</label><select id="m-r" onchange="chk()">${opts(S.rooms,l.room,'— не указан —')}</select>
  ${others.length?`<label>Совместный урок — вместе с классами:</label><div>${others.map(c=>`<label class="ck"><input type="checkbox" class="m-w" value="${c.id}"${ws.includes(c.id)?' checked':''} onchange="chk()">${esc(c.name)}</label>`).join('')}</div>`:''}
  <div id="m-w"></div>
- <div class="row" style="margin-top:14px"><button class="pri" onclick="saveCell()">Сохранить</button><button onclick="closeM()">Отмена</button><span class="sp"></span><button class="dng" onclick="delCell()">Удалить</button></div>`;
+ <div class="row" style="margin-top:14px"><button class="pri" onclick="saveCell()">Сохранить</button><button onclick="closeM()">Отмена</button><span class="sp"></span><button class="dng" onclick="delCell()">Удалить</button></div>
+ ${has?`<div style="border-top:1px solid var(--bd);margin-top:14px;padding-top:4px"><label>Перенести этот урок на:</label>
+ <div class="row"><select id="mv-d" onchange="mvPrev()">${DAYS.slice(0,S.days).map((n,i)=>`<option value="${i}"${i===d?' selected':''}>${n}</option>`).join('')}</select>
+ <select id="mv-s" onchange="mvPrev()">${Array.from({length:S.slots},(_,i)=>`<option value="${i}"${i===s?' selected':''}>${i+1} урок</option>`).join('')}</select></div>
+ <div id="mv-i"></div><div class="row"><button onclick="moveBtn()">↔ Перенести</button></div></div>`:''}`;
  $('#modal').style.display='flex';chk();
 }
 function cur3(){return {subj:$('#m-s').value,teacher:$('#m-t').value,room:$('#m-r').value,grp:window._g}}
@@ -414,12 +521,12 @@ function chk(){const [c,d,s]=window._k;const r=conflict(tgs(),d,s,cur3());
 function dropGroup(d,s){if(!window._g)return;
  for(const k of Object.keys(S.lessons)){const p=k.split('|');if(+p[1]===d&&+p[2]===s&&S.lessons[k].grp===window._g)delete S.lessons[k]}}
 function saveCell(){const [c,d,s]=window._k,v=cur3();if(!v.subj){alert('Выберите предмет');return}
- const tg=tgs();dropGroup(d,s);
+ const tg=tgs();pushH();dropGroup(d,s);
  const g=tg.length>1?uid():'';
  tg.forEach(x=>S.lessons[x+'|'+d+'|'+s]={subj:v.subj,teacher:v.teacher,room:v.room,grp:g});
  save();closeM();render()}
 function delCell(){const [c,d,s]=window._k;
- if(window._g){if(!confirm('Это совместный урок — он удалится у всех классов. Продолжить?'))return;dropGroup(d,s)}
+ if(window._g){if(!confirm('Это совместный урок — он удалится у всех классов. Продолжить?'))return;pushH();dropGroup(d,s)}else pushH();
  delete S.lessons[c+'|'+d+'|'+s];save();closeM();render()}
 function closeM(){$('#modal').style.display='none'}
 $('#modal').addEventListener('click',e=>{if(e.target.id==='modal')closeM()});
@@ -501,7 +608,7 @@ function rm(k,id){if(!confirm('Удалить? Связанные уроки т�
   if(k==='classes'&&key.startsWith(id+'|'))delete S.lessons[key];
   else if(f&&l[f]===id){if(f==='subj')delete S.lessons[key];else l[f]=''}}
  save();rDict()}
-function resetAll(){if(confirm('Удалить все данные и начать заново?')){S=def();save();rDict()}}
+function resetAll(){if(confirm('Удалить все данные и начать заново?')){S=def();HIST.length=0;save();rDict()}}
 
 /* ---------- print / PDF ---------- */
 function rPrint(){

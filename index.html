@@ -287,7 +287,8 @@ function gridHTML(m,id,edit){
    const cls='c'+(c?' f':'')+(bad?' bad':'')+(edit?'':' ro');
    const st=c?` style="background:${c.sb.color}"`:'';
    const oc=edit?` onclick="openCell('${id}',${d},${s})" data-d="${d}" data-s="${s}" ondragover="dO(event)" ondragleave="this.classList.remove('dhov')" ondrop="dD(event,'${id}',${d},${s})"${c?` draggable="true" ondragstart="dS(event,'${id}',${d},${s})" ondragend="dE()"`:''}`:'';
-   h+=`<td class="${cls}"${st}${oc}>${c?`<b>${esc(c.sb.name)}</b>${c.out.map(esc).join('<br>')}${bad?'<br>⚠ конфликт':''}`:''}</td>`;
+   const lock=c&&edit&&m==='class'&&!S.lessons[id+'|'+d+'|'+s]?.auto?'🔒 ':'';
+   h+=`<td class="${cls}"${st}${oc}>${c?`<b>${lock}${esc(c.sb.name)}</b>${c.out.map(esc).join('<br>')}${bad?'<br>⚠ конфликт':''}`:''}</td>`;
   }
   h+='</tr>';
  }
@@ -309,8 +310,8 @@ function moveCheck(cid,d,s,d2,s2){
  }else{
   for(const c of members)if(trial[c+'|'+d2+'|'+s2])return {hard:'Совместный урок можно перенести только в пустую ячейку (у класса '+by(S.classes,c).name+' она занята).'};
  }
- members.forEach(c=>trial[c+'|'+d2+'|'+s2]={...l});
- if(sw)trial[cid+'|'+d+'|'+s]={...sw};
+ members.forEach(c=>trial[c+'|'+d2+'|'+s2]={...l,auto:0});
+ if(sw)trial[cid+'|'+d+'|'+s]={...sw,auto:0};
  const reasons=conflictIn(trial,members,d2,s2,l);
  if(sw)conflictIn(trial,[cid],d,s,sw).forEach(x=>reasons.push('Урок, который меняется местами: '+x));
  return {trial,reasons:[...new Set(reasons)],swap:!!sw};
@@ -410,12 +411,20 @@ async function prDay(d){
  $('#print').innerHTML=await embed(h);window.print();
 }
 
-/* ---------- автоматическое составление ---------- */
-function tryGen(jobs,it){
+/* ---------- автоматическое составление (ручные уроки не трогаются) ---------- */
+function tryGen(jobs,it,fixed){
  const L={},tb={},rb={},cd={},cs={},td={};const miss=[];let score=0;
+ // ручные уроки: переносим как есть и помечаем занятыми
+ for(const k in fixed){
+  const l=fixed[k],[c,d,s]=k.split('|');
+  L[k]=l;
+  if(l.teacher){tb[l.teacher+'|'+d+'|'+s]=1;td[l.teacher+'|'+d]=(td[l.teacher+'|'+d]||0)+1}
+  if(l.room)rb[l.room+'|'+d+'|'+s]=1;
+  cd[c+'|'+d]=(cd[c+'|'+d]||0)+1;cs[c+'|'+d+'|'+l.subj]=1;
+ }
  const items=[];
  jobs.forEach(j=>{const av=j.t.days.filter(d=>d<S.days).length||1;
-  for(let h=0;h<j.a.hrs;h++)items.push({j,k:av/j.a.hrs+Math.random()*(it?1.5:0)})});
+  for(let h=0;h<j.h;h++)items.push({j,k:av/j.h+Math.random()*(it?1.5:0)})});
  items.sort((a,b)=>a.k-b.k);
  for(const {j} of items){
   const t=j.t,c=j.a.cls,sj=j.a.subj,r=t.room||'';let b=null;
@@ -427,30 +436,41 @@ function tryGen(jobs,it){
    }}
   if(!b){miss.push(`${by(S.classes,c).name} · ${by(S.subjects,sj).name} · ${t.name}`);continue}
   const {d,s}=b;score+=b.sc;
-  L[c+'|'+d+'|'+s]={subj:sj,teacher:t.id,room:r,grp:''};
+  L[c+'|'+d+'|'+s]={subj:sj,teacher:t.id,room:r,grp:'',auto:1};
   tb[t.id+'|'+d+'|'+s]=1;if(r)rb[r+'|'+d+'|'+s]=1;
   cd[c+'|'+d]=(cd[c+'|'+d]||0)+1;td[t.id+'|'+d]=(td[t.id+'|'+d]||0)+1;cs[c+'|'+d+'|'+sj]=1;
  }
  return {L,miss,score};
 }
 function autoGen(){
- const jobs=[];
- S.teachers.forEach(t=>t.assign.forEach(a=>{if(by(S.classes,a.cls)&&by(S.subjects,a.subj)&&a.hrs>0)jobs.push({t,a})}));
- if(!jobs.length){alert('Сначала во вкладке «Справочники» добавьте нагрузку учителей (класс, предмет, часы).');return}
- if(!confirm('Текущее расписание будет заменено новым (можно отменить кнопкой «Отменить»). Продолжить?'))return;
+ // ручные = все уроки без метки auto; они остаются на месте
+ const fixed={},used={};
+ for(const k in S.lessons){const l=S.lessons[k];if(l.auto)continue;
+  fixed[k]=l;const key=k.split('|')[0]+'|'+l.subj+'|'+l.teacher;used[key]=(used[key]||0)+1}
+ const jobs=[];let any=false;
+ S.teachers.forEach(t=>t.assign.forEach(a=>{
+  if(!(by(S.classes,a.cls)&&by(S.subjects,a.subj)&&a.hrs>0))return;
+  any=true;
+  const key=a.cls+'|'+a.subj+'|'+t.id,u=Math.min(used[key]||0,a.hrs);
+  used[key]=(used[key]||0)-u;
+  const h=a.hrs-u;if(h>0)jobs.push({t,a,h});
+ }));
+ if(!any){alert('Сначала во вкладке «Справочники» добавьте нагрузку учителей (класс, предмет, часы).');return}
+ const nf=Object.keys(fixed).length;
+ if(!confirm(`Ручные уроки (${nf}) останутся на месте. Автоматические уроки будут составлены заново (можно отменить кнопкой «Отменить»). Продолжить?`))return;
  let best=null;
  for(let it=0;it<150;it++){
-  const r=tryGen(jobs,it);
+  const r=tryGen(jobs,it,fixed);
   if(!best||r.miss.length<best.miss.length||(r.miss.length===best.miss.length&&r.score<best.score))best=r;
   if(!best.miss.length&&it>=30)break;
  }
  pushH();
  S.teachers.forEach(t=>{if(t.assign.length)t.classes=[...new Set(t.assign.map(a=>a.cls).filter(Boolean))]});
  S.lessons=best.L;save();render();
- const n=Object.keys(best.L).length;
+ const n=Object.keys(best.L).length-nf;
  $('#app').insertAdjacentHTML('afterbegin',best.miss.length
-  ?`<div class="err">Размещено уроков: ${n}. Не поместилось (${best.miss.length}): ${best.miss.map(esc).join('; ')}.<br>Причина: не хватает рабочих дней учителя, слишком много часов у класса или занят общий кабинет. Добавьте дни, уроков в день или уберите «Свой кабинет».</div>`
-  :`<div class="ok">✅ Расписание составлено: ${n} уроков, без конфликтов. Урок можно перетащить мышкой в другую ячейку.</div>`);
+  ?`<div class="err">Размещено новых уроков: ${n}, ручных сохранено: ${nf}. Не поместилось (${best.miss.length}): ${best.miss.map(esc).join('; ')}.<br>Причина: не хватает рабочих дней учителя, слишком много часов у класса или занят общий кабинет. Добавьте дни, уроков в день или уберите «Свой кабинет».</div>`
+  :`<div class="ok">✅ Расписание составлено: новых уроков — ${n}, ручных сохранено — ${nf}. Конфликтов нет.</div>`);
 }
 
 /* ---------- schedule tab ---------- */
@@ -472,8 +492,8 @@ function rSched(){
  </div>
  ${chkHTML()}
  ${tt?`<p class="mut" style="margin-top:0">${esc(tInfo(tt))}</p>`:''}
- ${searchHTML()}${mode==='class'&&ent?'<div class="lg2"><span>При перетаскивании урока:</span><span><i style="background:#2ecc71"></i>свободно, без конфликтов</span><span><i style="background:#3498db"></i>поменяются местами</span><span><i style="background:#e74c3c"></i>конфликт</span></div>':''}${ent?`<div class="wrap">${gridHTML(mode,ent,mode==='class')}</div>${legend()}
- <p class="mut">${mode==='class'?'Перетащите карточку урока в другую ячейку (например, с 4-го на 7-й урок) — если ячейка занята, уроки поменяются местами. Программа подсветит безопасные места и предупредит о конфликте. На телефоне: нажмите на урок → «Перенести». Жёлтая рамка — конфликт.':'Это просмотр: расписание собирается автоматически из классов.'} Всё сохраняется автоматически.</p>`
+ ${searchHTML()}${mode==='class'&&ent?'<div class="lg2"><span>При перетаскивании урока:</span><span><i style="background:#2ecc71"></i>свободно, без конфликтов</span><span><i style="background:#3498db"></i>поменяются местами</span><span><i style="background:#e74c3c"></i>конфликт</span><span>🔒 — ручной урок (автосоставление его не трогает)</span></div>':''}${ent?`<div class="wrap">${gridHTML(mode,ent,mode==='class')}</div>${legend()}
+ <p class="mut">${mode==='class'?'Перетащите карточку урока в другую ячейку (например, с 4-го на 7-й урок) — если ячейка занята, уроки поменяются местами. Программа подсветит безопасные места и предупредит о конфликте. На телефоне: нажмите на урок → «Перенести». Жёлтая рамка — конфликт. Уроки, которые вы поставили или перенесли сами (🔒), автосоставление не меняет.':'Это просмотр: расписание собирается автоматически из классов.'} Всё сохраняется автоматически.</p>`
  :'<div class="card">Сначала добавьте данные во вкладке «Справочники».</div>'}`;
 }
 function go(m,id){mode=m;ent=id;Q='';$('#q').value='';cur='s';tab('s')}

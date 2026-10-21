@@ -39,6 +39,8 @@ td.c.dsw{outline:3px solid #3498db;outline-offset:-3px}
 td.c.dno{outline:3px solid #e74c3c;outline-offset:-3px;opacity:.5}
 td.c.dhov{box-shadow:0 0 0 4px var(--ac)}
 td.ro{cursor:default}
+.lk{cursor:pointer;font-weight:400}
+.lk.o{opacity:.55}
 table.dy td.c{min-width:110px;height:70px}
 .card{background:var(--card);border:1px solid var(--bd);border-radius:14px;padding:14px;margin-bottom:14px}
 .card h3{margin:0 0 10px;font-size:16px}
@@ -85,9 +87,20 @@ table.ld th{color:var(--mut);font-size:13px}
 .leg{display:flex;flex-wrap:wrap;gap:6px 12px;margin-top:8px;font-size:12px}
 .leg i{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:4px;vertical-align:-1px}
 .zd{font:2px/2px monospace;color:#fff;word-break:break-all;overflow:hidden;margin-top:6px;user-select:none}
+#lock{position:fixed;inset:0;z-index:100;background:#10141f;display:flex;align-items:center;justify-content:center;padding:16px}
+#lock .lb{background:#1a2030;color:#e8ecf6;padding:24px;border-radius:16px;width:320px;max-width:100%;text-align:center}
+#lock input{width:100%;margin-bottom:10px;background:#10141f;color:#e8ecf6;border:1px solid #2c3550}
+#lock .pe{color:#ff7b7b;font-size:13px;margin-top:8px;min-height:18px}
 </style>
 </head>
 <body>
+<div id="lock"><div class="lb">
+ <h2 style="margin:0 0 6px">🔒 Расписание</h2>
+ <p style="margin:0 0 14px;color:#98a2b8;font-size:14px">Введите пароль для входа</p>
+ <input type="password" id="pw" placeholder="Пароль" autofocus onkeydown="if(event.key==='Enter')unlock()">
+ <button class="pri" style="width:100%" onclick="unlock()">Войти</button>
+ <div class="pe" id="pwe"></div>
+</div></div>
 <header>
  <h1>📅 Расписание</h1>
  <div class="tabs">
@@ -105,8 +118,92 @@ table.ld th{color:var(--mut);font-size:13px}
 <div id="modal"><div class="box" id="mbox"></div></div>
 <div id="print"></div>
 
+<footer style="
+  background: linear-gradient(135deg, #0f172a, #1e293b);
+  color: #ffffff;
+  padding: 30px 20px;
+  text-align: center;
+  font-family: Arial, sans-serif;
+  border-radius: 16px 16px 0 0;
+  margin-top: 40px;
+">
+  <h2 style="
+    margin: 0 0 10px;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 1px;
+  ">
+    Badriddin
+  </h2>
+
+  <p style="
+    margin: 0 0 20px;
+    color: #94a3b8;
+    font-size: 14px;
+  ">
+    Frontend Developer | Web Developer
+  </p>
+
+  <div style="
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 25px;
+  ">
+    <a href="tel:+998887818810" style="
+      color: #e2e8f0;
+      text-decoration: none;
+      font-size: 15px;
+      transition: 0.3s;
+    ">
+      📞 +998 88 781 88 10
+    </a>
+
+    <a href="https://t.me/Badriddindev1dev" target="_blank" rel="noopener noreferrer" style="
+      display: inline-block;
+      background: #229ED9;
+      color: white;
+      text-decoration: none;
+      padding: 11px 20px;
+      border-radius: 10px;
+      font-size: 14px;
+      font-weight: 600;
+      box-shadow: 0 4px 15px rgba(34, 158, 217, 0.25);
+    ">
+      ✈ Telegram
+    </a>
+  </div>
+
+  <div style="
+    height: 1px;
+    background: rgba(255,255,255,0.12);
+    margin-bottom: 18px;
+  "></div>
+
+  <p style="
+    margin: 0;
+    color: #64748b;
+    font-size: 13px;
+  ">
+    © 2026 Badriddin. All rights reserved.
+  </p>
+</footer>
+
 <script>
 const $=s=>document.querySelector(s);
+const PASSWORD='05121985'; 
+try{if(sessionStorage.getItem('zauch-ok')==='1')document.addEventListener('DOMContentLoaded',()=>$('#lock')&&$('#lock').remove())}catch(e){}
+function unlock(){
+ if($('#pw').value===PASSWORD){
+  try{sessionStorage.setItem('zauch-ok','1')}catch(e){}
+  $('#lock').remove();
+ }else{
+  $('#pwe').textContent='Неверный пароль';
+  $('#pw').value='';$('#pw').focus();
+ }
+}
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const DAYS=['Понедельник','Вторник','Среда','Четверг','Пятница','Суббота'];
 const SH=['Пн','Вт','Ср','Чт','Пт','Сб'];
@@ -287,7 +384,8 @@ function gridHTML(m,id,edit){
    const cls='c'+(c?' f':'')+(bad?' bad':'')+(edit?'':' ro');
    const st=c?` style="background:${c.sb.color}"`:'';
    const oc=edit?` onclick="openCell('${id}',${d},${s})" data-d="${d}" data-s="${s}" ondragover="dO(event)" ondragleave="this.classList.remove('dhov')" ondrop="dD(event,'${id}',${d},${s})"${c?` draggable="true" ondragstart="dS(event,'${id}',${d},${s})" ondragend="dE()"`:''}`:'';
-   const lock=c&&edit&&m==='class'&&!S.lessons[id+'|'+d+'|'+s]?.auto?'🔒 ':'';
+   const L0=S.lessons[id+'|'+d+'|'+s];
+   const lock=c&&edit&&m==='class'&&L0?`<span class="lk${L0.auto?' o':''}" title="${L0.auto?'Не закреплён: автосоставление может переставить. Нажмите, чтобы закрепить':'Закреплён: автосоставление не трогает. Нажмите, чтобы снять'}" onclick="event.stopPropagation();tgLock('${id}',${d},${s})">${L0.auto?'🔓':'🔒'}</span> `:'';
    h+=`<td class="${cls}"${st}${oc}>${c?`<b>${lock}${esc(c.sb.name)}</b>${c.out.map(esc).join('<br>')}${bad?'<br>⚠ конфликт':''}`:''}</td>`;
   }
   h+='</tr>';
@@ -411,10 +509,9 @@ async function prDay(d){
  $('#print').innerHTML=await embed(h);window.print();
 }
 
-/* ---------- автоматическое составление (ручные уроки не трогаются) ---------- */
+/* ---------- автоматическое составление (закреплённые 🔒 уроки не трогаются) ---------- */
 function tryGen(jobs,it,fixed){
  const L={},tb={},rb={},cd={},cs={},td={};const miss=[];let score=0;
- // ручные уроки: переносим как есть и помечаем занятыми
  for(const k in fixed){
   const l=fixed[k],[c,d,s]=k.split('|');
   L[k]=l;
@@ -443,7 +540,7 @@ function tryGen(jobs,it,fixed){
  return {L,miss,score};
 }
 function autoGen(){
- // ручные = все уроки без метки auto; они остаются на месте
+ // закреплённые = все уроки без метки auto; они остаются на месте
  const fixed={},used={};
  for(const k in S.lessons){const l=S.lessons[k];if(l.auto)continue;
   fixed[k]=l;const key=k.split('|')[0]+'|'+l.subj+'|'+l.teacher;used[key]=(used[key]||0)+1}
@@ -457,7 +554,7 @@ function autoGen(){
  }));
  if(!any){alert('Сначала во вкладке «Справочники» добавьте нагрузку учителей (класс, предмет, часы).');return}
  const nf=Object.keys(fixed).length;
- if(!confirm(`Ручные уроки (${nf}) останутся на месте. Автоматические уроки будут составлены заново (можно отменить кнопкой «Отменить»). Продолжить?`))return;
+ if(!confirm(`Закреплённые уроки 🔒 (${nf}) останутся на месте. Незакреплённые 🔓 будут составлены заново (можно отменить кнопкой «Отменить»). Продолжить?`))return;
  let best=null;
  for(let it=0;it<150;it++){
   const r=tryGen(jobs,it,fixed);
@@ -469,8 +566,8 @@ function autoGen(){
  S.lessons=best.L;save();render();
  const n=Object.keys(best.L).length-nf;
  $('#app').insertAdjacentHTML('afterbegin',best.miss.length
-  ?`<div class="err">Размещено новых уроков: ${n}, ручных сохранено: ${nf}. Не поместилось (${best.miss.length}): ${best.miss.map(esc).join('; ')}.<br>Причина: не хватает рабочих дней учителя, слишком много часов у класса или занят общий кабинет. Добавьте дни, уроков в день или уберите «Свой кабинет».</div>`
-  :`<div class="ok">✅ Расписание составлено: новых уроков — ${n}, ручных сохранено — ${nf}. Конфликтов нет.</div>`);
+  ?`<div class="err">Размещено новых уроков: ${n}, закреплённых сохранено: ${nf}. Не поместилось (${best.miss.length}): ${best.miss.map(esc).join('; ')}.<br>Причина: не хватает рабочих дней учителя, слишком много часов у класса или занят общий кабинет. Добавьте дни, уроков в день или уберите «Свой кабинет».</div>`
+  :`<div class="ok">✅ Расписание составлено: новых уроков — ${n}, закреплённых сохранено — ${nf}. Конфликтов нет.</div>`);
 }
 
 /* ---------- schedule tab ---------- */
@@ -488,12 +585,12 @@ function rSched(){
   <button onclick="undo()"${HIST.length?'':' disabled'} title="Ctrl+Z">↶ Отменить</button>
   <button onclick="CHKON=!CHKON;render()">🔍 Проверить конфликты</button>
   <button class="pri" onclick="autoGen()">⚡ Составить автоматически</button>
-  ${mode==='class'&&ent?'<button class="dng" onclick="clearClass()">Очистить класс</button>':''}
+  ${mode==='class'&&ent?'<button onclick="lockAll(false)">🔓 Снять все ключи</button><button onclick="lockAll(true)">🔒 Закрепить все</button><button class="dng" onclick="clearClass()">Очистить класс</button>':''}
  </div>
  ${chkHTML()}
  ${tt?`<p class="mut" style="margin-top:0">${esc(tInfo(tt))}</p>`:''}
- ${searchHTML()}${mode==='class'&&ent?'<div class="lg2"><span>При перетаскивании урока:</span><span><i style="background:#2ecc71"></i>свободно, без конфликтов</span><span><i style="background:#3498db"></i>поменяются местами</span><span><i style="background:#e74c3c"></i>конфликт</span><span>🔒 — ручной урок (автосоставление его не трогает)</span></div>':''}${ent?`<div class="wrap">${gridHTML(mode,ent,mode==='class')}</div>${legend()}
- <p class="mut">${mode==='class'?'Перетащите карточку урока в другую ячейку (например, с 4-го на 7-й урок) — если ячейка занята, уроки поменяются местами. Программа подсветит безопасные места и предупредит о конфликте. На телефоне: нажмите на урок → «Перенести». Жёлтая рамка — конфликт. Уроки, которые вы поставили или перенесли сами (🔒), автосоставление не меняет.':'Это просмотр: расписание собирается автоматически из классов.'} Всё сохраняется автоматически.</p>`
+ ${searchHTML()}${mode==='class'&&ent?'<div class="lg2"><span>При перетаскивании урока:</span><span><i style="background:#2ecc71"></i>свободно, без конфликтов</span><span><i style="background:#3498db"></i>поменяются местами</span><span><i style="background:#e74c3c"></i>конфликт</span><span>🔒 — закреплён (автосоставление не трогает)</span><span>🔓 — не закреплён (автосоставление может переставить). Нажмите на ключ, чтобы переключить</span></div>':''}${ent?`<div class="wrap">${gridHTML(mode,ent,mode==='class')}</div>${legend()}
+ <p class="mut">${mode==='class'?'Перетащите карточку урока в другую ячейку (например, с 4-го на 7-й урок) — если ячейка занята, уроки поменяются местами. Программа подсветит безопасные места и предупредит о конфликте. На телефоне: нажмите на урок → «Перенести». Жёлтая рамка — конфликт. Нажмите на ключ 🔒/🔓 рядом с названием урока, чтобы закрепить его или снять закрепление; автосоставление не меняет только закреплённые (🔒) уроки.':'Это просмотр: расписание собирается автоматически из классов.'} Всё сохраняется автоматически.</p>`
  :'<div class="card">Сначала добавьте данные во вкладке «Справочники».</div>'}`;
 }
 function go(m,id){mode=m;ent=id;Q='';$('#q').value='';cur='s';tab('s')}
@@ -514,6 +611,17 @@ function searchHTML(){
 }
 function clearClass(){if(!confirm('Очистить расписание этого класса?'))return;
  pushH();for(const k of Object.keys(S.lessons))if(k.startsWith(ent+'|'))delete S.lessons[k];save();render()}
+
+/* ---------- ключи 🔒/🔓: v=true — закрепить (auto=0), v=false — снять (auto=1) ---------- */
+function setLock(cid,d,s,v){
+ const l=S.lessons[cid+'|'+d+'|'+s];if(!l)return;
+ const g=l.grp;
+ for(const k in S.lessons){const p=k.split('|'),o=S.lessons[k];
+  if(k===cid+'|'+d+'|'+s||(g&&+p[1]===d&&+p[2]===s&&o.grp===g))o.auto=v?0:1}
+}
+function tgLock(cid,d,s){const l=S.lessons[cid+'|'+d+'|'+s];if(!l)return;pushH();setLock(cid,d,s,!!l.auto);save();render()}
+function lockAll(v){pushH();for(const k in S.lessons){if(!k.startsWith(ent+'|'))continue;const p=k.split('|');setLock(ent,+p[1],+p[2],v)}save();render()}
+
 function opts(arr,sel,empty){return `<option value="">${empty}</option>`+arr.map(x=>`<option value="${x.id}"${x.id===sel?' selected':''}>${esc(x.name)}</option>`).join('')}
 function openCell(cid,d,s){
  const l=S.lessons[cid+'|'+d+'|'+s]||{};
@@ -526,6 +634,7 @@ function openCell(cid,d,s){
  <label>Учитель</label><select id="m-t" onchange="chk()">${opts(S.teachers,l.teacher,'— не указан —')}</select>
  <label>Кабинет</label><select id="m-r" onchange="chk()">${opts(S.rooms,l.room,'— не указан —')}</select>
  ${others.length?`<label>Совместный урок — вместе с классами:</label><div>${others.map(c=>`<label class="ck"><input type="checkbox" class="m-w" value="${c.id}"${ws.includes(c.id)?' checked':''} onchange="chk()">${esc(c.name)}</label>`).join('')}</div>`:''}
+ <label class="ck" style="margin-top:12px"><input type="checkbox" id="m-lock"${(!has||!l.auto)?' checked':''}>🔒 Закрепить урок (автосоставление не трогает)</label>
  <div id="m-w"></div>
  <div class="row" style="margin-top:14px"><button class="pri" onclick="saveCell()">Сохранить</button><button onclick="closeM()">Отмена</button><span class="sp"></span><button class="dng" onclick="delCell()">Удалить</button></div>
  ${has?`<div style="border-top:1px solid var(--bd);margin-top:14px;padding-top:4px"><label>Перенести этот урок на:</label>
@@ -543,7 +652,8 @@ function dropGroup(d,s){if(!window._g)return;
 function saveCell(){const [c,d,s]=window._k,v=cur3();if(!v.subj){alert('Выберите предмет');return}
  const tg=tgs();pushH();dropGroup(d,s);
  const g=tg.length>1?uid():'';
- tg.forEach(x=>S.lessons[x+'|'+d+'|'+s]={subj:v.subj,teacher:v.teacher,room:v.room,grp:g});
+ const lk=$('#m-lock').checked?0:1;
+ tg.forEach(x=>S.lessons[x+'|'+d+'|'+s]={subj:v.subj,teacher:v.teacher,room:v.room,grp:g,auto:lk});
  save();closeM();render()}
 function delCell(){const [c,d,s]=window._k;
  if(window._g){if(!confirm('Это совместный урок — он удалится у всех классов. Продолжить?'))return;pushH();dropGroup(d,s)}else pushH();
